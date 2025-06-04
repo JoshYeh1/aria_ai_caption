@@ -10,6 +10,7 @@ import sys
 import torch
 import base64
 import io
+import threading
 
 # === Initialize Ollama client ===
 print("🔄 Connecting to Ollama...")
@@ -19,34 +20,63 @@ print("✅ LLaVA (Ollama) client initialized.")
 # === Streaming Observer Class ===
 class StreamingObserver:
     def __init__(self):
-        self.pending_frame = None  # New frame to caption
-        self.has_new_frame = False
+        self.last_image = None
+        self.last_caption_time = 0
+        self.cooldown = 1.5  # seconds between captions
+        self.caption = "Waiting for image..."
+        self.caption_in_progress = False
 
     def on_image_received(self, image: np.ndarray, record: ImageDataRecord):
-        if record.camera_id != aria.CameraId.Rgb:
-            return
-        if not self.has_new_frame:
-            self.pending_frame = np.rot90(image, -1).copy()
-            self.has_new_frame = True
+        if record.camera_id == aria.CameraId.Rgb:
+            self.last_image = np.rot90(image, -1)
+            self.maybe_caption()
+
+    def maybe_caption(self):
+        now = time.time()
+        if (
+            self.last_image is not None
+            and not self.caption_in_progress
+            and now - self.last_caption_time >= self.cooldown
+        ):
+            print("🟡 Triggering captioning...")
+            self.caption_in_progress = True
+            self.last_caption_time = now
+            threading.Thread(
+                target=self._caption_worker, args=(self.last_image.copy(),)
+            ).start()
+
+    def _caption_worker(self, image):
+        try:
+            start = time.time()
+            caption = self.generate_caption(image)
+            duration = time.time() - start
+
+            self.caption = caption
+            print("Caption from LLaVA:", caption)
+            print(f"⏱️ Caption generation took {duration:.2f} seconds")
+        finally:
+            self.caption_in_progress = False
 
     def generate_caption(self, np_img: np.ndarray) -> str:
-        start_time = time.time()
         try:
-            image = Image.fromarray(np_img).convert("RGB").resize((256, 256))
+            # Convert image to PIL and resize
+            image = Image.fromarray(np_img).convert("RGB")
+            image = image.resize((256, 256))
+
+            # Encode to base64
             buffer = io.BytesIO()
             image.save(buffer, format="PNG")
             image_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
+            # Call Ollama LLaVA model
             response = client.generate(
-                model="llava",
-                prompt="Describe this scene for someone who is visually impaired.",
+                model="llava-phi3",
+                prompt="Produce a brief concise caption for the image describing the surroundings and important objects/hazards. Disregard intent of surroundings apart from facial expressions.",
                 images=[image_b64],
             )
-            print(f"Duration: {time.time()-start_time:.2f} seconds")
             return response.get("response", "No caption returned.")
         except Exception as e:
             return f"Exception: {e}"
-
 
 # === CLI Argument Parsing ===
 parser = argparse.ArgumentParser()
@@ -57,7 +87,6 @@ parser.add_argument(
     choices=["usb", "wifi"],
     help="Connection type: usb or wifi",
 )
-parser.add_argument("--debug",action="store_true",help="Enable debug output")
 args = parser.parse_args()
 
 # === Optional WiFi Device Setup ===
@@ -102,31 +131,12 @@ cv2.resizeWindow("Aria RGB + LLaVA Caption", 640, 480)
 
 try:
     while True:
-        if observer.has_new_frame:
-            # Get and reset pending frame
-            frame_rgb = observer.pending_frame
-            observer.has_new_frame = False
-
-            # Generate caption
-            image = Image.fromarray(frame_rgb).convert("RGB").resize((256, 256))
-            buffer = io.BytesIO()
-            image.save(buffer, format="PNG")
-            image_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-
-            start_time = time.time()
-            response = client.generate(
-                model="llava",
-                prompt="Describe this scene for someone who is visually impaired.",
-                images=[image_b64],
-            )
-            caption = response.get("response", "No caption returned.")
-            print(f"🕒 Caption duration: {time.time() - start_time:.2f}s")
-
-            # Display captioned frame
-            frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+        if observer.last_image is not None:
+            frame = cv2.cvtColor(observer.last_image, cv2.COLOR_RGB2BGR)
+            # Draw caption
             cv2.putText(
-                frame_bgr,
-                caption,
+                frame,
+                observer.caption,
                 (30, 30),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.8,
@@ -134,13 +144,20 @@ try:
                 2,
                 cv2.LINE_AA,
             )
-            cv2.imshow("Aria RGB + LLaVA Caption", frame_bgr)
-
+            cv2.imshow("Aria RGB + LLaVA Caption", frame)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
+        
+        time.sleep(0.01)  # Sleep for 10ms
+
 except KeyboardInterrupt:
-    print("Interrupted by user.")
+    print("\n⛔ Interrupted by user.")
 finally:
     streaming_client.unsubscribe()
     cv2.destroyAllWindows()
+    print("👋 Exiting.")
+
+# Example usage:
+# python stream_and_caption_llava.py --interface usb
+
 
