@@ -25,6 +25,8 @@ class StreamingObserver:
         self.cooldown = 1.5  # seconds between captions
         self.caption = "Waiting for image..."
         self.caption_in_progress = False
+        self.follow_up_in_progress = False
+        self.last_follow_up = ""  # optional: to show on screen
 
     def on_image_received(self, image: np.ndarray, record: ImageDataRecord):
         if record.camera_id == aria.CameraId.Rgb:
@@ -36,14 +38,16 @@ class StreamingObserver:
         if (
             self.last_image is not None
             and not self.caption_in_progress
+            and not self.follow_up_in_progress   # 👈 block during follow-up
             and now - self.last_caption_time >= self.cooldown
         ):
-            print("\n🟡 Triggering captioning...")
+            print("🟡 Triggering captioning...")
             self.caption_in_progress = True
             self.last_caption_time = now
             threading.Thread(
                 target=self._caption_worker, args=(self.last_image.copy(),)
             ).start()
+
 
     def _caption_worker(self, image):
         try:
@@ -83,9 +87,11 @@ class StreamingObserver:
             print("⚠️ No image available yet for follow-up.", flush=True)
             return "No image available yet for follow-up."
 
-        self.follow_up_in_progress = True  # 🚫 Temporarily pause image display
+        self.follow_up_in_progress = True
         try:
             print("🔁 Follow-up question being processed...", flush=True)
+
+            start_time = time.time()  # ⏱️ Start timing
 
             # Convert image
             image = Image.fromarray(self.last_image).convert("RGB").resize((256, 256))
@@ -93,17 +99,20 @@ class StreamingObserver:
             image.save(buffer, format="PNG")
             image_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
-            # Send to LLaVA
+            # Send question to LLaVA
             response = client.generate(
                 model="llava-phi3",
                 prompt=question,
                 images=[image_b64],
             )
 
-            answer = response.get("response", "No answer returned.")
-            print("🤖 LLaVA says:", answer, flush=True)
+            end_time = time.time()  # ⏱️ End timing
+            duration = end_time - start_time
 
-            # Save to show on frame (optional)
+            answer = response.get("response", "No answer returned.")
+            print(f"🤖 LLaVA response: {answer}", flush=True)
+            print(f"⏱️ Follow-up processing took {duration:.2f} seconds", flush=True)
+
             self.last_follow_up = answer
             return answer
         except Exception as e:
@@ -171,8 +180,7 @@ def follow_up_input_loop(observer: StreamingObserver):
         question = input("\n💬 Ask a follow-up question (or type 'exit'): ")
         if question.lower() == "exit":
             break
-        answer = observer.ask_follow_up(question)
-        print("🤖 LLaVA says:", answer, flush=True)
+        observer.ask_follow_up(question)
 
 input_thread = threading.Thread(target=follow_up_input_loop, args=(observer,))
 input_thread.daemon = True
@@ -180,24 +188,41 @@ input_thread.start()
 
 try:
     while True:
-        if observer.last_image is not None:
+        # Only show frame if not in follow-up interaction
+        if observer.last_image is not None and not observer.follow_up_in_progress:
             frame = cv2.cvtColor(observer.last_image, cv2.COLOR_RGB2BGR)
-            # Draw caption
+
+            # Draw image caption
             cv2.putText(
                 frame,
                 observer.caption,
                 (30, 30),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
+                0.7,
                 (255, 255, 255),
                 2,
                 cv2.LINE_AA,
             )
+
+            # Optionally show follow-up answer as subtitle
+            if hasattr(observer, "last_follow_up") and observer.last_follow_up:
+                cv2.putText(
+                    frame,
+                    observer.last_follow_up,
+                    (30, 60),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (0, 255, 255),
+                    2,
+                    cv2.LINE_AA,
+                )
+
             cv2.imshow("Aria RGB + LLaVA Caption", frame)
+
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
-        
-        time.sleep(0.01)  # Sleep for 10ms
+
+        time.sleep(0.01)
 
 except KeyboardInterrupt:
     print("\n⛔ Interrupted by user.")
