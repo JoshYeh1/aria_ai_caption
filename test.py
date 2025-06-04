@@ -38,7 +38,7 @@ class StreamingObserver:
             and not self.caption_in_progress
             and now - self.last_caption_time >= self.cooldown
         ):
-            print("🟡 Triggering captioning...")
+            print("\n🟡 Triggering captioning...")
             self.caption_in_progress = True
             self.last_caption_time = now
             threading.Thread(
@@ -52,8 +52,8 @@ class StreamingObserver:
             duration = time.time() - start
 
             self.caption = caption
-            print("Caption from LLaVA:", caption)
-            print(f"⏱️ Caption generation took {duration:.2f} seconds")
+            print("\nCaption from LLaVA:", caption)
+            print(f"\n⏱️ Caption generation took {duration:.2f} seconds")
         finally:
             self.caption_in_progress = False
 
@@ -71,12 +71,48 @@ class StreamingObserver:
             # Call Ollama LLaVA model
             response = client.generate(
                 model="llava-phi3",
-                prompt="Produce a brief concise caption for the image describing the surroundings and important objects/hazards. Disregard intent of surroundings apart from facial expressions.",
+                prompt="Describe this image in a short, informative sentence for someone who is visually impaired.",
                 images=[image_b64],
             )
             return response.get("response", "No caption returned.")
         except Exception as e:
             return f"Exception: {e}"
+        
+    def ask_follow_up(self, question: str) -> str:
+        if self.last_image is None:
+            print("⚠️ No image available yet for follow-up.", flush=True)
+            return "No image available yet for follow-up."
+
+        self.follow_up_in_progress = True  # 🚫 Temporarily pause image display
+        try:
+            print("🔁 Follow-up question being processed...", flush=True)
+
+            # Convert image
+            image = Image.fromarray(self.last_image).convert("RGB").resize((256, 256))
+            buffer = io.BytesIO()
+            image.save(buffer, format="PNG")
+            image_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+            # Send to LLaVA
+            response = client.generate(
+                model="llava-phi3",
+                prompt=question,
+                images=[image_b64],
+            )
+
+            answer = response.get("response", "No answer returned.")
+            print("🤖 LLaVA says:", answer, flush=True)
+
+            # Save to show on frame (optional)
+            self.last_follow_up = answer
+            return answer
+        except Exception as e:
+            print("❌ Error during follow-up:", e, flush=True)
+            return f"Exception during follow-up: {e}"
+        finally:
+            self.follow_up_in_progress = False
+
+
 
 # === CLI Argument Parsing ===
 parser = argparse.ArgumentParser()
@@ -129,6 +165,19 @@ print("✅ Connected to Aria. Streaming started.")
 cv2.namedWindow("Aria RGB + LLaVA Caption", cv2.WINDOW_NORMAL)
 cv2.resizeWindow("Aria RGB + LLaVA Caption", 640, 480)
 
+# === Launch user input thread for follow-up questions ===
+def follow_up_input_loop(observer: StreamingObserver):
+    while True:
+        question = input("\n💬 Ask a follow-up question (or type 'exit'): ")
+        if question.lower() == "exit":
+            break
+        answer = observer.ask_follow_up(question)
+        print("🤖 LLaVA says:", answer, flush=True)
+
+input_thread = threading.Thread(target=follow_up_input_loop, args=(observer,))
+input_thread.daemon = True
+input_thread.start()
+
 try:
     while True:
         if observer.last_image is not None:
@@ -156,8 +205,3 @@ finally:
     streaming_client.unsubscribe()
     cv2.destroyAllWindows()
     print("👋 Exiting.")
-
-# Example usage:
-# python stream_and_caption_llava.py --interface usb
-
-
