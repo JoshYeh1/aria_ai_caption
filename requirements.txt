@@ -1,6 +1,5 @@
-projectaria_client_sdk
-
+numpy<2.0.0
+torch
 opencv-python
-fastplotlib==0.1.0a13
-glfw==2.6.2
-pygfx==0.1.14
+pillow
+ollama
