@@ -158,4 +158,4 @@ finally:
     print("👋 Exiting.")
 
 # Example usage:
-# python stream_and_caption_llava.py --interface usb
+# python llava_caption.py --interface usb
