@@ -6,9 +6,9 @@ from ollama import Client
 import aria.sdk as aria
 from projectaria_tools.core.sensor_data import ImageDataRecord
 import argparse
-import sys
-import torch
-import base64
+#import sys
+#import torch
+#import base64
 import io
 import threading
 import requests
