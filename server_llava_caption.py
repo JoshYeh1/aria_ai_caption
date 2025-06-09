@@ -6,14 +6,12 @@ from ollama import Client
 import aria.sdk as aria
 from projectaria_tools.core.sensor_data import ImageDataRecord
 import argparse
-#import sys
-#import torch
-#import base64
 import io
 import threading
 import requests
 import queue
 import os
+import sys
 
 # === Initialize Ollama client ===
 print("Connecting to Ollama...")
@@ -28,6 +26,7 @@ class StreamingObserver:
         self.cooldown = 1.5  # seconds between captions
         self.caption = "Waiting for image..."
         self.caption_in_progress = False
+        self.last_caption = ""
 
     def on_image_received(self, image: np.ndarray, record: ImageDataRecord):
         if record.camera_id == aria.CameraId.Rgb:
@@ -55,6 +54,7 @@ class StreamingObserver:
             duration = time.time() - start
 
             self.caption = caption
+            self.last_caption = caption
             print("Caption from LLaVA:", caption)
             print(f"Caption generation took {duration:.2f} seconds")
             tts_queue.put(caption) #speak the caption
@@ -80,6 +80,31 @@ class StreamingObserver:
 
         except Exception as e:
             return f"Exception during captioning: {e}"
+    
+    def ask_follow_up(self, question: str) -> str:
+        if self.last_image is None:
+            return "No image available yet for follow-up."
+
+        try:
+            qa_start = time.time()
+            image = Image.fromarray(self.last_image).convert("RGB").resize((256, 256))
+            buffer = io.BytesIO()
+            image.save(buffer, format="PNG")
+            buffer.seek(0)
+
+            files = {'image': ('frame.png', buffer, 'image/png')}
+            data = {'question': question}  # assumes your server accepts this
+
+            response = requests.post("http://10.100.241.227:8000/follow_up", files=files, data=data)
+
+            if response.status_code == 200:
+                print(f"🧠 Q&A took {time.time() - qa_start:.2f} seconds")
+                return response.json().get("answer", "No answer returned.")
+            else:
+                return f"Server error: {response.status_code} - {response.text}"
+        except Exception as e:
+            return f"Exception during follow-up: {e}"
+
 
 # === CLI Argument Parsing ===
 parser = argparse.ArgumentParser()
@@ -150,14 +175,33 @@ print("Connected to Aria. Streaming started.")
 cv2.namedWindow("Aria RGB + LLaVA Caption", cv2.WINDOW_NORMAL)
 cv2.resizeWindow("Aria RGB + LLaVA Caption", 640, 480)
 
+# === Launch user input thread for follow-up questions ===
+def follow_up_input_loop(observer: StreamingObserver):
+    try:
+        while True:
+            question = input("\n Ask a follow-up question (or type 'exit'): ")
+            if question.lower() == "exit":
+                print("Exiting follow-up input thread.")
+                sys.exit(0)
+            answer = observer.ask_follow_up(question)
+            print("\n LLaVA says:", answer, flush=True)
+    except (KeyboardInterrupt, EOFError):
+        print("\n Stopping follow-up loop.")
+        sys.exit(0)
+
+input_thread = threading.Thread(target=follow_up_input_loop, args=(observer,))
+input_thread.daemon = True
+input_thread.start()
+
 try:
     while True:
         if observer.last_image is not None:
             frame = cv2.cvtColor(observer.last_image, cv2.COLOR_RGB2BGR)
             # Draw caption
+            caption_display = observer.caption[:80] + "..." if len(observer.caption) > 80 else observer.caption
             cv2.putText(
                 frame,
-                observer.caption,
+                caption_display,
                 (30, 30),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.8,
@@ -179,3 +223,4 @@ finally:
     tts_thread.join()    # Wait for TTS thread to finish
     cv2.destroyAllWindows()
     print("Exiting.")
+
