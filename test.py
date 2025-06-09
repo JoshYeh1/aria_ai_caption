@@ -13,6 +13,7 @@ import requests
 import queue
 import os
 import sys
+from wake_word import wait_for_wake_word, record_chunk, transcribe
 
 # === Initialize Ollama client ===
 print("Connecting to Ollama...")
@@ -85,29 +86,6 @@ class StreamingObserver:
         except Exception as e:
             return f"Exception: {e}"
     
-    def ask_follow_up(self, question: str) -> str:
-        if self.last_image is None:
-            return "No image available yet for follow-up."
-
-        try:
-            qa_start = time.time()
-            image = Image.fromarray(self.last_image).convert("RGB").resize((256, 256))
-            buffer = io.BytesIO()
-            image.save(buffer, format="PNG")
-            buffer.seek(0)
-
-            files = {'image': ('frame.png', buffer, 'image/png')}
-            data = {'question': question}  # assumes your server accepts this
-
-            response = requests.post("http://10.100.241.227:8000/follow_up", files=files, data=data)
-
-            if response.status_code == 200:
-                print(f"🧠 Q&A took {time.time() - qa_start:.2f} seconds")
-                return response.json().get("answer", "No answer returned.")
-            else:
-                return f"Server error: {response.status_code} - {response.text}"
-        except Exception as e:
-            return f"Exception during follow-up: {e}"
 
 
 # === CLI Argument Parsing ===
@@ -170,6 +148,30 @@ def tts_worker():
         finally:
             observer.tts_in_progress = False #flag end
             tts_queue.task_done()
+
+
+def follow_up_audio_loop(observer: StreamingObserver):
+    try:
+        while True:
+            wait_for_wake_word()
+            os.system('say "I’m listening."')
+            print("Ready for follow-up question. Listening...")
+
+            audio, fs = record_chunk(duration=4)
+            question = transcribe(audio, fs).strip()
+            print("You asked:", question)
+
+            if question.lower() in ["exit", "quit"]:
+                print("Exiting follow-up loop.")
+                break
+
+            answer = observer.ask_follow_up(question)
+            print("🧠 LLaVA says:", answer)
+
+            tts_queue.put(answer)
+    except KeyboardInterrupt:
+        print("\n Audio follow-up loop interrupted.")
+        sys.exit(0)
 
 tts_thread = threading.Thread(target=tts_worker, daemon=True)
 tts_thread.start()

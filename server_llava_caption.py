@@ -12,6 +12,7 @@ import requests
 import queue
 import os
 import sys
+from wake_word import wait_for_wake_word
 
 # === Initialize Ollama client ===
 print("Connecting to Ollama...")
@@ -168,6 +169,7 @@ def tts_worker():
         finally:
             observer.tts_in_progress = False #flag end
             tts_queue.task_done()
+
 
 tts_thread = threading.Thread(target=tts_worker, daemon=True)
 tts_thread.start()
