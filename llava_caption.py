@@ -13,9 +13,9 @@ import io
 import threading
 
 # === Initialize Ollama client ===
-print("🔄 Connecting to Ollama...")
+print("Connecting to Ollama...")
 client = Client()
-print("✅ LLaVA (Ollama) client initialized.")
+print("LLaVA (Ollama) client initialized.")
 
 # === Streaming Observer Class ===
 class StreamingObserver:
@@ -38,7 +38,7 @@ class StreamingObserver:
             and not self.caption_in_progress
             and now - self.last_caption_time >= self.cooldown
         ):
-            print("🟡 Triggering captioning...")
+            print("Triggering captioning...")
             self.caption_in_progress = True
             self.last_caption_time = now
             threading.Thread(
@@ -53,7 +53,7 @@ class StreamingObserver:
 
             self.caption = caption
             print("Caption from LLaVA:", caption)
-            print(f"⏱️ Caption generation took {duration:.2f} seconds")
+            print(f"Caption generation took {duration:.2f} seconds")
         finally:
             self.caption_in_progress = False
 
@@ -102,10 +102,10 @@ if args.interface == "wifi":
     streaming_config.security_options.use_ephemeral_certs = True
     streaming_manager.streaming_config = streaming_config
     streaming_manager.start_streaming()
-    print("📡 Streaming started over Wi-Fi.")
+    print("Streaming started over Wi-Fi.")
 
 # === Aria Streaming Setup ===
-print("🔌 Initializing Aria streaming client...")
+print("Initializing Aria streaming client...")
 aria.set_log_level(aria.Level.Info)
 streaming_client = aria.StreamingClient()
 
@@ -123,7 +123,7 @@ streaming_client.subscription_config = config
 observer = StreamingObserver()
 streaming_client.set_streaming_client_observer(observer)
 streaming_client.subscribe()
-print("✅ Connected to Aria. Streaming started.")
+print("Connected to Aria. Streaming started.")
 
 # === OpenCV Display Loop ===
 cv2.namedWindow("Aria RGB + LLaVA Caption", cv2.WINDOW_NORMAL)
@@ -151,11 +151,11 @@ try:
         time.sleep(0.01)  # Sleep for 10ms
 
 except KeyboardInterrupt:
-    print("\n⛔ Interrupted by user.")
+    print("\nInterrupted by user.")
 finally:
     streaming_client.unsubscribe()
     cv2.destroyAllWindows()
-    print("👋 Exiting.")
+    print("Exiting.")
 
 # Example usage:
 # python llava_caption.py --interface usb
