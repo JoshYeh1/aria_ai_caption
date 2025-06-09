@@ -11,20 +11,13 @@ import torch
 import base64
 import io
 import threading
-import pyttsx3 #for text to speech
 import queue
+import os
 
 # === Initialize Ollama client ===
 print("Connecting to Ollama...")
 client = Client()
 print("LLaVA (Ollama) client initialized.")
-
-def speak_text(text):
-    engine = pyttsx3.init()
-    engine.setProperty('rate', 160)
-    engine.setProperty('volume', 1.0)
-    engine.say(text)
-    engine.runAndWait()
 
 # === Streaming Observer Class ===
 class StreamingObserver:
@@ -63,7 +56,7 @@ class StreamingObserver:
             self.caption = caption
             print("Caption from LLaVA:", caption)
             print(f"Caption generation took {duration:.2f} seconds")
-            threading.Thread(target=speak_text, args=(caption,)).start() #speak the caption
+            tts_queue.put(caption) #speak the caption
         finally:
             self.caption_in_progress = False
 
@@ -132,6 +125,24 @@ streaming_client.subscription_config = config
 
 # === Observer & Streaming Start ===
 observer = StreamingObserver()
+
+# === Initialize TTS queue and worker ===
+tts_queue = queue.Queue()
+
+def tts_worker():
+    while True:
+        text = tts_queue.get()
+        if text is None:
+            break
+        try:
+            os.system(f'say "{text}"')  # macOS built-in TTS
+        except Exception as e:
+            print("TTS Error:", e)
+        tts_queue.task_done()
+
+tts_thread = threading.Thread(target=tts_worker, daemon=True)
+tts_thread.start()
+
 streaming_client.set_streaming_client_observer(observer)
 streaming_client.subscribe()
 print("Connected to Aria. Streaming started.")
@@ -165,6 +176,8 @@ except KeyboardInterrupt:
     print("\nInterrupted by user.")
 finally:
     streaming_client.unsubscribe()
+    tts_queue.put(None)  # Signal TTS thread to exit
+    tts_thread.join()    # Wait for TTS thread to finish
     cv2.destroyAllWindows()
     print("Exiting.")
 
