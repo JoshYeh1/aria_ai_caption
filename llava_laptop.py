@@ -230,4 +230,3 @@ finally:
     tts_thread.join()    # Wait for TTS thread to finish
     cv2.destroyAllWindows()
     print("Exiting.")
-
