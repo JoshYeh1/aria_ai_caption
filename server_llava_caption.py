@@ -11,20 +11,12 @@ import torch
 import base64
 import io
 import threading
-import pyttsx3 #for text to speech
-import queue
+import requests
 
 # === Initialize Ollama client ===
 print("Connecting to Ollama...")
 client = Client()
 print("LLaVA (Ollama) client initialized.")
-
-def speak_text(text):
-    engine = pyttsx3.init()
-    engine.setProperty('rate', 160)
-    engine.setProperty('volume', 1.0)
-    engine.say(text)
-    engine.runAndWait()
 
 # === Streaming Observer Class ===
 class StreamingObserver:
@@ -63,31 +55,28 @@ class StreamingObserver:
             self.caption = caption
             print("Caption from LLaVA:", caption)
             print(f"Caption generation took {duration:.2f} seconds")
-            threading.Thread(target=speak_text, args=(caption,)).start() #speak the caption
         finally:
             self.caption_in_progress = False
 
     def generate_caption(self, np_img: np.ndarray) -> str:
         try:
-            # Convert image to PIL and resize
+            # Convert NumPy image to PIL and encode as PNG in-memory
             image = Image.fromarray(np_img).convert("RGB")
-            image = image.resize((256, 256))
-
-            # Encode to base64
             buffer = io.BytesIO()
             image.save(buffer, format="PNG")
-            image_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+            buffer.seek(0)
 
-            # Call Ollama LLaVA model
-            response = client.generate(
-                model="llava-phi3",
-                prompt="Describe this image in a short, informative sentence for someone who is visually impaired.",
-                images=[image_b64],
-            )
-            return response.get("response", "No caption returned.")
+            # Send image to Flask caption server
+            files = {'image': ('frame.png', buffer, 'image/png')}
+            response = requests.post("http://10.100.241.227:8000/caption", files=files)
+
+            if response.status_code == 200:
+                return response.json().get("caption", "No caption received.")
+            else:
+                return f"Server error: {response.status_code} - {response.text}"
+
         except Exception as e:
-            return f"Exception: {e}"
-
+            return f"Exception during captioning: {e}"
 
 # === CLI Argument Parsing ===
 parser = argparse.ArgumentParser()
@@ -167,6 +156,3 @@ finally:
     streaming_client.unsubscribe()
     cv2.destroyAllWindows()
     print("Exiting.")
-
-# Example usage:
-# python llava_caption.py --interface usb
