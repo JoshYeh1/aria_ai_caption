@@ -7,25 +7,20 @@ import time
 import scipy.io.wavfile as wavfile
 from rapidfuzz import fuzz
 
-# === Load Whisper Model ===
-model = whisper.load_model("base")  # Or "tiny" for faster response
+model = whisper.load_model("base")  
 
-# === Define Wake Phrases ===
 WAKE_PHRASES = ["hey aria", "hey area", "hey arya"]
-THRESHOLD = 80  # Fuzzy match threshold
+THRESHOLD = 80  #Fuzzy match threshold
 
-# === Wake Phrase Matching ===
 def is_wake_phrase(text, phrases=WAKE_PHRASES, threshold=THRESHOLD):
     return any(fuzz.partial_ratio(text.lower(), phrase) >= threshold for phrase in phrases)
 
-# === Record Audio Chunk ===
 def record_chunk(duration=2, fs=64000):
     print("Listening...")
     audio = sd.rec(int(duration * fs), samplerate=fs, channels=1, dtype='int16')
     sd.wait()
     return audio, fs
 
-# === Transcribe Audio ===
 def transcribe(audio, fs):
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         wavfile.write(f.name, fs, audio)
@@ -33,7 +28,6 @@ def transcribe(audio, fs):
         os.remove(f.name)
         return result["text"]
 
-# === Wake-Word Listening Loop ===
 print("Wake-word detection started. Say 'Hey Aria'...")
 
 try:
