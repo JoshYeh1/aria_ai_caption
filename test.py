@@ -27,6 +27,7 @@ class StreamingObserver:
         self.caption = "Waiting for image..."
         self.caption_in_progress = False
         self.last_caption = ""
+        self.tts_in_progress = False
 
     def on_image_received(self, image: np.ndarray, record: ImageDataRecord):
         if record.camera_id == aria.CameraId.Rgb:
@@ -38,6 +39,7 @@ class StreamingObserver:
         if (
             self.last_image is not None
             and not self.caption_in_progress
+            and not self.tts_in_progress #ensures text to speech is complete
             and now - self.last_caption_time >= self.cooldown
         ):
             print("Triggering captioning...")
@@ -159,10 +161,13 @@ def tts_worker():
         if text is None:
             break
         try:
+            observer.tts_in_progress = True #flag start
             os.system(f'say "{text}"')  # macOS built-in TTS
         except Exception as e:
             print("TTS Error:", e)
-        tts_queue.task_done()
+        finally:
+            observer.tts_in_progress = False #flag end
+            tts_queue.task_done()
 
 tts_thread = threading.Thread(target=tts_worker, daemon=True)
 tts_thread.start()
@@ -179,7 +184,7 @@ cv2.resizeWindow("Aria RGB + LLaVA Caption", 640, 480)
 def follow_up_input_loop(observer: StreamingObserver):
     try:
         while True:
-            question = input("\n Ask a follow-up question (or type 'exit'): ")
+            question = input("\n Ask a follow-up question: ")
             if question.lower() == "exit":
                 print("Exiting follow-up input thread.")
                 sys.exit(0)
@@ -223,4 +228,3 @@ finally:
     tts_thread.join()    # Wait for TTS thread to finish
     cv2.destroyAllWindows()
     print("Exiting.")
-

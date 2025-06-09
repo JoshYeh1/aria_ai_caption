@@ -184,7 +184,7 @@ cv2.resizeWindow("Aria RGB + LLaVA Caption", 640, 480)
 def follow_up_input_loop(observer: StreamingObserver):
     try:
         while True:
-            question = input("\n Ask a follow-up question (or type 'exit'): ")
+            question = input("\n Ask a follow-up question: ")
             if question.lower() == "exit":
                 print("Exiting follow-up input thread.")
                 sys.exit(0)
