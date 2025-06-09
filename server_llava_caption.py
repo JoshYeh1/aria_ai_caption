@@ -12,6 +12,8 @@ import base64
 import io
 import threading
 import requests
+import queue
+import os
 
 # === Initialize Ollama client ===
 print("Connecting to Ollama...")
@@ -55,6 +57,7 @@ class StreamingObserver:
             self.caption = caption
             print("Caption from LLaVA:", caption)
             print(f"Caption generation took {duration:.2f} seconds")
+            tts_queue.put(caption) #speak the caption
         finally:
             self.caption_in_progress = False
 
@@ -121,6 +124,24 @@ streaming_client.subscription_config = config
 
 # === Observer & Streaming Start ===
 observer = StreamingObserver()
+
+# === Initialize TTS queue and worker ===
+tts_queue = queue.Queue()
+
+def tts_worker():
+    while True:
+        text = tts_queue.get()
+        if text is None:
+            break
+        try:
+            os.system(f'say "{text}"')  # macOS built-in TTS
+        except Exception as e:
+            print("TTS Error:", e)
+        tts_queue.task_done()
+
+tts_thread = threading.Thread(target=tts_worker, daemon=True)
+tts_thread.start()
+
 streaming_client.set_streaming_client_observer(observer)
 streaming_client.subscribe()
 print("Connected to Aria. Streaming started.")
@@ -154,5 +175,7 @@ except KeyboardInterrupt:
     print("\nInterrupted by user.")
 finally:
     streaming_client.unsubscribe()
+    tts_queue.put(None)  # Signal TTS thread to exit
+    tts_thread.join()    # Wait for TTS thread to finish
     cv2.destroyAllWindows()
     print("Exiting.")
