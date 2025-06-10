@@ -1,6 +1,12 @@
 numpy<2.0.0
-torch
-opencv-python
+requests
 pillow
-ollama
+flask
+opencv-python
+openai-whisper
+sounddevice
+scipy
 rapidfuzz
+ollama
+torch
+urllib3
