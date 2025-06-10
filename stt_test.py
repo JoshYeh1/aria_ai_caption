@@ -26,4 +26,4 @@ def transcribe(recording, fs):
 # Example usage:
 audio, rate = record_audio(duration=4)
 text = transcribe(audio, rate)
-print("🗣️ You said:", text)
+print("You said:", text)

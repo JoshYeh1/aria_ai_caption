@@ -14,7 +14,6 @@ import requests
 import queue
 import os
 import sys
-from wake_word import wait_for_wake_word
 
 # === Initialize Ollama client ===
 print("Connecting to Ollama...")
@@ -26,7 +25,7 @@ class StreamingObserver:
     def __init__(self):
         self.last_image = None
         self.last_caption_time = 0
-        self.cooldown = 1.5  # seconds between captions
+        self.cooldown = 5  # seconds between captions
         self.caption = "Waiting for image..."
         self.caption_in_progress = False
         self.last_caption = ""
@@ -155,7 +154,7 @@ streaming_client.subscription_config = config
 # === Observer & Streaming Start ===
 observer = StreamingObserver()
 
-# === Initialize TTS queue and worker ===
+# === Initialize text to speech queue and worker ===
 tts_queue = queue.Queue()
 
 def tts_worker():
@@ -192,8 +191,12 @@ def follow_up_input_loop(observer: StreamingObserver):
             if question.lower() == "exit":
                 print("Exiting follow-up input thread.")
                 sys.exit(0)
+            
             answer = observer.ask_follow_up(question)
             print("\n LLaVA says:", answer, flush=True)
+            while observer.caption_in_progress:
+                time.sleep(0.05)
+            tts_queue.put(answer) #adds answer to queue if there
     except (KeyboardInterrupt, EOFError):
         print("\n Stopping follow-up loop.")
         sys.exit(0)
@@ -232,4 +235,3 @@ finally:
     tts_thread.join()    # Wait for TTS thread to finish
     cv2.destroyAllWindows()
     print("Exiting.")
-
