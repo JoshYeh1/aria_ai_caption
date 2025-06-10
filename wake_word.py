@@ -24,19 +24,19 @@ def record_chunk(duration=4, fs=16000): #records for 4 seconds, change duration 
     sd.wait()
     return audio, fs
 
-def transcribe(audio, fs):
+def transcribe(audio, fs, model):
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         wavfile.write(f.name, fs, audio)
         result = model.transcribe(f.name)
         os.remove(f.name)
         return result["text"]
 
-def wait_for_wake_word():
+def wait_for_wake_word(model):
     print("Waiting for 'Hey Aria' to start captioning...")
     try:
         while True:
             audio_chunk, rate = record_chunk()
-            text = transcribe(audio_chunk, rate)
+            text = transcribe(audio_chunk, rate, model)
             print("Heard:", text)
 
             if is_wake_phrase(text):

@@ -1,11 +1,12 @@
 #test file for Josh to try random stuff 
 
-import cv2, argparse, time, io, threading, requests, queue, os, sys
+import cv2, argparse, time, io, threading, requests, queue, os, sys, warnings
 import numpy as np
 from PIL import Image
 from ollama import Client
 import aria.sdk as aria
 from projectaria_tools.core.sensor_data import ImageDataRecord
+from datetime import datetime
 
 #speech to text imports
 import whisper
@@ -13,14 +14,20 @@ import sounddevice as sd
 import tempfile, subprocess
 import scipy.io.wavfile as wavfile
 
+#Wake word inputs
+import wake_word #make sure wake_word.py is in same folder
+
+warnings.filterwarnings("ignore", message="FP16 is not supported on CPU; using FP32 instead")
+
 # === Initialize Ollama client ===
 print("Connecting to Ollama...")
 client = Client()
 print("LLaVA (Ollama) client initialized.")
 
 # === Initialize Whisper ===
+#Change to faster-whisper foe faster CPU transcription?
 print("Loading Whisper model...")
-stt_model = whisper.load_model("base") # also can pick "tiny", "base", "small", and "medium"
+stt_model = whisper.load_model("base", device = "cpu") # also can pick "tiny", "base", "small", and "medium"
 print("Whisper loaded.")
 
 #Variables for tts interruption
@@ -56,6 +63,13 @@ def stop_current_tts(): #interrupts speech and empty the queue
                 tts_queue.get_nowait()
             except queue.Empty:
                 break
+
+def log_event(message, logfile="wake_log.txt"):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{timestamp}]  {message}")
+    #Uncomment following if you want datalog txt
+    #with open(logfile, "a") as f:
+    #    f.write(f"[{timestamp}] {message}\n")
 
 # === Streaming Observer Class ===
 class StreamingObserver:
@@ -287,9 +301,32 @@ def follow_up_input_loop(observer: StreamingObserver):
         tts_queue.put(None)
         sys.exit(0)
 
-input_thread = threading.Thread(target=follow_up_input_loop, args=(observer,))
-input_thread.daemon = True
-input_thread.start()
+def follow_up_on_wake(observer: StreamingObserver):
+    while True:
+        wake_word.wait_for_wake_word(stt_model)
+        log_event("Wake word detected.")
+
+        observer.caption_pause = True
+        stop_current_tts()
+        time.sleep(0.1)
+
+        print("Listening for your question...")
+        audio, rate = record_audio(duration=4)
+        question = transcribe_audio(audio, rate)
+        print(f'You asked: "{question}"')
+        log_event(f"Question: {question}")
+
+        if question:
+            answer = observer.ask_follow_up(question)
+            print("\nLLaVA says:", answer)
+            log_event(f"Answer: {answer}")
+            subprocess.call(["say", answer])
+
+        observer.caption_pause = False
+        time.sleep(1.0)  # prevent retriggering
+
+wake_thread = threading.Thread(target=follow_up_on_wake, args=(observer,), daemon=True)
+wake_thread.start()
 
 try:
     while True:

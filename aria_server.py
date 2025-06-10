@@ -1,7 +1,7 @@
-# Combination of all test code to run through server. Integrates llava captioning
-# for aria glasses, text to speech, q&a, and wake word.
-# q&a requests can be also triggered on terminal by pressing "t" or speech can be prompeted
-# by pressing "s"
+# Combination of all test code to run through server. 
+# Similar to server_llava_caption.py with some differences. 
+# No longer captions image unless prompeted (Still process images tho)
+# Wake word & Key press only way to make requests 
 
 import cv2, argparse, time, io, threading, requests, queue, os, sys, warnings
 import numpy as np
@@ -78,8 +78,6 @@ def log_event(message, logfile="wake_log.txt"):
 class StreamingObserver:
     def __init__(self):
         self.last_image = None
-        self.last_caption_time = 0
-        self.cooldown = 10  # seconds between captions **CHANGE IF NEEDED**
         self.caption = "Waiting for image..."
         self.caption_in_progress = False
         self.last_caption = ""
@@ -89,23 +87,6 @@ class StreamingObserver:
     def on_image_received(self, image: np.ndarray, record: ImageDataRecord):
         if record.camera_id == aria.CameraId.Rgb:
             self.last_image = np.rot90(image, -1)
-            self.maybe_caption()
-
-    def maybe_caption(self):
-        now = time.time()
-        if (
-            self.last_image is not None
-            and not self.caption_pause #ensures that new caption will not run if there is tts for q&a in progress
-            and not self.caption_in_progress #ensures caption generation is complete 
-            and not self.tts_in_progress #ensures text to speech is complete
-            and now - self.last_caption_time >= self.cooldown #waits for cooldown time (might not be needed now tbh)
-        ):
-            print("Triggering captioning...")
-            self.caption_in_progress = True
-            self.last_caption_time = now
-            threading.Thread(
-                target=self._caption_worker, args=(self.last_image.copy(),)
-            ).start()
 
     def _caption_worker(self, image):
         try:
@@ -134,7 +115,7 @@ class StreamingObserver:
             response = requests.post(
                 "http://10.100.241.227:8000/caption",
                 files=files,
-                timeout= 4  # seconds till timeout. adjust as needed
+                timeout= 7  # seconds till timeout. adjust as needed
             )
 
             if response.status_code == 200:
@@ -271,7 +252,18 @@ def follow_up_input_loop(observer: StreamingObserver):
                 audio, rate = record_audio(duration=4)
                 question = transcribe_audio(audio, rate)
                 print(f'You said: "{question}"')
+                log_event(f"Question: {question}")
+
                 if not question:
+                    observer.caption_pause = False
+                    continue
+                
+                #Captions image 
+                if question.lower() in ["caption", "describe", "what's around me"]:
+                    caption = observer.generate_caption(observer.last_image)
+                    print(f"\nLLaVA caption: {caption}")
+                    log_event(f"Caption: {caption}")
+                    subprocess.call(["say", caption])
                     observer.caption_pause = False
                     continue
 
@@ -319,6 +311,15 @@ def follow_up_on_wake(observer: StreamingObserver):
         print(f'You asked: "{question}"')
         log_event(f"Question: {question}")
 
+        #Captions image 
+        if question.lower() in ["caption", "describe", "what's around me"]:
+            caption = observer.generate_caption(observer.last_image)
+            print(f"\nLLaVA caption: {caption}")
+            log_event(f"Caption: {caption}")
+            subprocess.call(["say", caption])
+            observer.caption_pause = False
+            continue
+
         if question:
             answer = observer.ask_follow_up(question)
             print("\nLLaVA says:", answer)
@@ -362,4 +363,3 @@ finally:
     tts_thread.join()    # Wait for TTS thread to finish
     cv2.destroyAllWindows()
     print("Exiting.")
-
