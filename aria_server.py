@@ -1,5 +1,5 @@
 # Combination of all test code to run through server. 
-# Similar to server_llava_caption.py with some differences. 
+# Similar to aria_server_caption.py with some differences. 
 # No longer captions image unless prompeted (Still process images tho)
 # Wake word & Key press only way to make requests 
 
@@ -269,7 +269,7 @@ def follow_up_input_loop(observer: StreamingObserver):
 
                 #ask LLaVA & speak the answer immediately
                 answer = observer.ask_follow_up(question)
-                print("\nLLaVA says:", answer, flush=True)
+                #print("\nLLaVA says:", answer, flush=True) #Dont need this because of log_event def
 
                 observer.tts_in_progress = True #block captions while we speak
                 stop_current_tts() #nothing should slip ahead in the queue

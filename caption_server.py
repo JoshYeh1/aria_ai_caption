@@ -1,3 +1,6 @@
+# This runs GPU server connection 
+# Make sure this is running before running programs needing server requests.
+
 from flask import Flask, request, jsonify
 from PIL import Image
 import io
@@ -28,7 +31,7 @@ def caption():
         #generate caption
         response = client.generate(
             model="llava",  # can use "llava" or "llava-phi3"
-            prompt="caption the image from a video stream concicely in less than three sentences for someone whow is visually impaired. Only mention objects and hazards.",
+            prompt="caption the image in english from a video stream concicely in less than two sentences for someone who is visually impaired. Only mention objects and hazards.",
             images=[image_b64],
         )
         #Alternative Promt:Describe this image briefly for someone who is visually impaired. Exclude assumptions except for facial expressions
@@ -58,7 +61,7 @@ def follow_up():
 
         response = client.generate(
             model="llava",  # use "llava" or "llava-phi3"
-            prompt=question,
+            prompt=f"Answer concisely in less than two sentences: {question}",
             images=[image_b64],
         )
 
@@ -67,7 +70,6 @@ def follow_up():
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
 
 # === Run server ===
 if __name__ == '__main__':

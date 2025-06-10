@@ -1,5 +1,5 @@
 #Runs llava on laptop and captions live stream images from aria glasses
-#does not have follow up question or text to speech. Use llava_laptop.py for more features
+#DOES NOT have follow up question or text to speech. Use llava_laptop.py for more features
 import cv2
 import numpy as np
 import time

@@ -1,4 +1,5 @@
-#Created as an import module for server_llava_caption. Functionally same as hey_aria.py
+# Created as an import module for server_llava_caption. Functionally same as hey_aria.py
+# NEEDED as module for stt programs
 
 import whisper
 import sounddevice as sd

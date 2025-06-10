@@ -1,4 +1,5 @@
-#Program for running llava captioning on laptop cpu/gpu. Includes speech to text and follow up questions
+# Program for running llava captioning on laptop cpu/gpu. 
+# Includes speech to text and follow up questions
 import cv2
 import numpy as np
 import time
