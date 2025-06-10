@@ -27,11 +27,12 @@ def caption():
 
         #generate caption
         response = client.generate(
-            model="llava-phi3",  # can use "llava" or "llava-phi3"
-            prompt="Describe this image concisely including objects and hazards. Do not make assumptions beyond observable facial expressions.",
+            model="llava",  # can use "llava" or "llava-phi3"
+            prompt="caption the image from a video stream concicely in less than three sentences for someone whow is visually impaired. Only mention objects and hazards.",
             images=[image_b64],
         )
         #Alternative Promt:Describe this image briefly for someone who is visually impaired. Exclude assumptions except for facial expressions
+        #Describe this image concisely including objects and hazards. Do not make assumptions beyond observable facial expressions.
         caption = response.get("response", "No caption returned.")
         return jsonify({'caption': caption})
 
@@ -71,4 +72,3 @@ def follow_up():
 # === Run server ===
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000)
-

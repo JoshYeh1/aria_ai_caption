@@ -62,7 +62,7 @@ class StreamingObserver:
     def __init__(self):
         self.last_image = None
         self.last_caption_time = 0
-        self.cooldown = 5  # seconds between captions **CHANGE IF NEEDED**
+        self.cooldown = 10  # seconds between captions **CHANGE IF NEEDED**
         self.caption = "Waiting for image..."
         self.caption_in_progress = False
         self.last_caption = ""
@@ -114,16 +114,23 @@ class StreamingObserver:
 
             #send image to Flask caption server (make sure server is running)
             files = {'image': ('frame.png', buffer, 'image/png')}
-            response = requests.post("http://10.100.241.227:8000/caption", files=files)
+            response = requests.post(
+                "http://10.100.241.227:8000/caption",
+                files=files,
+                timeout= 4  # seconds till timeout. adjust as needed
+            )
 
             if response.status_code == 200:
                 return response.json().get("caption", "No caption received.")
             else:
                 return f"Server error: {response.status_code} - {response.text}"
-
+        
+        except requests.exceptions.ConnectTimeout:
+            return "Caption server timed out; is it running?"
+        
         except Exception as e:
             return f"Exception during captioning: {e}"
-    
+
     def ask_follow_up(self, question: str) -> str:
         if self.last_image is None:
             return "No image available yet for follow-up."
