@@ -1,3 +1,4 @@
+#Speech to text using whisper and using laptop microphone
 import whisper
 import sounddevice as sd
 import numpy as np

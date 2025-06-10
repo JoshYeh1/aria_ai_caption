@@ -1,3 +1,5 @@
+#Created as an import module for server_llava_caption. Functionally same as hey_aria.py
+
 import whisper
 import sounddevice as sd
 import numpy as np

@@ -1,3 +1,4 @@
+#Tests LLaVA AI model on local device by captioning imported image
 import base64
 from PIL import Image
 import io

@@ -1,3 +1,4 @@
+#wake word test for "Hey Aria". Wake word can be changed in WAKEPHRASES
 import whisper
 import sounddevice as sd
 import numpy as np

@@ -1,3 +1,4 @@
+#Program for running llava captioning on laptop cpu/gpu. Includes speech to text and follow up questions
 import cv2
 import numpy as np
 import time
@@ -77,7 +78,7 @@ class StreamingObserver:
 
             # Call Ollama LLaVA model
             response = client.generate(
-                model="llava-phi3",
+                model="llava-phi3", #CHANGE MODEL IF DESIRED, use "llava" or "llava-phi3"
                 prompt="Describe this image in a short, informative sentence for someone who is visually impaired.",
                 images=[image_b64],
             )
@@ -102,7 +103,7 @@ class StreamingObserver:
             response = requests.post("http://10.100.241.227:8000/follow_up", files=files, data=data)
 
             if response.status_code == 200:
-                print(f"🧠 Q&A took {time.time() - qa_start:.2f} seconds")
+                print(f"Q&A took {time.time() - qa_start:.2f} seconds")
                 return response.json().get("answer", "No answer returned.")
             else:
                 return f"Server error: {response.status_code} - {response.text}"
@@ -220,7 +221,7 @@ try:
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
         
-        time.sleep(0.01)  # Sleep for 10ms
+        time.sleep(0.01)  #sleep for 10ms to reduce cpu load
 
 except KeyboardInterrupt:
     print("\nInterrupted by user.")

@@ -39,9 +39,9 @@ class StreamingObserver:
         now = time.time()
         if (
             self.last_image is not None
-            and not self.caption_in_progress
+            and not self.caption_in_progress #ensures caption generation is complete 
             and not self.tts_in_progress #ensures text to speech is complete
-            and now - self.last_caption_time >= self.cooldown
+            and now - self.last_caption_time >= self.cooldown #waits for cooldown time (might not be needed now tbh)
         ):
             print("Triggering captioning...")
             self.caption_in_progress = True
@@ -66,13 +66,13 @@ class StreamingObserver:
 
     def generate_caption(self, np_img: np.ndarray) -> str:
         try:
-            # Convert NumPy image to PIL and encode as PNG in-memory
+            #convert numpy image to PIL and encode as PNG in-memory
             image = Image.fromarray(np_img).convert("RGB")
             buffer = io.BytesIO()
             image.save(buffer, format="PNG")
             buffer.seek(0)
 
-            # Send image to Flask caption server
+            #send image to Flask caption server (make sure server is on)
             files = {'image': ('frame.png', buffer, 'image/png')}
             response = requests.post("http://10.100.241.227:8000/caption", files=files)
 
@@ -101,7 +101,7 @@ class StreamingObserver:
             response = requests.post("http://10.100.241.227:8000/follow_up", files=files, data=data)
 
             if response.status_code == 200:
-                print(f"🧠 Q&A took {time.time() - qa_start:.2f} seconds")
+                print(f"Q&A took {time.time() - qa_start:.2f} seconds")
                 return response.json().get("answer", "No answer returned.")
             else:
                 return f"Server error: {response.status_code} - {response.text}"

@@ -1,3 +1,5 @@
+#Runs llava on laptop and captions live stream images from aria glasses
+#does not have follow up question or text to speech. Use llava_laptop.py for more features
 import cv2
 import numpy as np
 import time
@@ -73,8 +75,8 @@ class StreamingObserver:
 
             # Call Ollama LLaVA model
             response = client.generate(
-                model="llava-phi3",
-                prompt="Describe this image in a short, informative sentence for someone who is visually impaired.",
+                model="llava-phi3", #can use "llava" or "llava-phi3"
+                prompt="Describe this image in a short, informative sentence for someone who is visually impaired.", #CHANGE PROMPT IF NEEDED
                 images=[image_b64],
             )
             return response.get("response", "No caption returned.")

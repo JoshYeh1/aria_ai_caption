@@ -1,3 +1,5 @@
+#Test program that adds a Q&A feature to captioning on local device. 
+#Connects to Aria glasses.
 import cv2
 import numpy as np
 import time
@@ -13,9 +15,9 @@ import io
 import threading
 
 # === Initialize Ollama client ===
-print("🔄 Connecting to Ollama...")
+print("Connecting to Ollama...")
 client = Client()
-print("✅ LLaVA (Ollama) client initialized.")
+print("LLaVA (Ollama) client initialized.")
 
 # === Streaming Observer Class ===
 class StreamingObserver:
@@ -38,7 +40,7 @@ class StreamingObserver:
             and not self.caption_in_progress
             and now - self.last_caption_time >= self.cooldown
         ):
-            print("\n🟡 Triggering captioning...")
+            print("\nTriggering captioning...")
             self.caption_in_progress = True
             self.last_caption_time = now
             threading.Thread(
@@ -53,7 +55,7 @@ class StreamingObserver:
 
             self.caption = caption
             print("\nCaption from LLaVA:", caption)
-            print(f"\n⏱️ Caption generation took {duration:.2f} seconds")
+            print(f"\nCaption generation took {duration:.2f} seconds")
         finally:
             self.caption_in_progress = False
 
@@ -123,7 +125,7 @@ if args.interface == "wifi":
     streaming_config.security_options.use_ephemeral_certs = True
     streaming_manager.streaming_config = streaming_config
     streaming_manager.start_streaming()
-    print("📡 Streaming started over Wi-Fi.")
+    print("Streaming started over Wi-Fi.")
 
 # === Aria Streaming Setup ===
 print("🔌 Initializing Aria streaming client...")
@@ -153,11 +155,11 @@ cv2.resizeWindow("Aria RGB + LLaVA Caption", 640, 480)
 # === Launch user input thread for follow-up questions ===
 def follow_up_input_loop(observer: StreamingObserver):
     while True:
-        question = input("\n💬 Ask a follow-up question (or type 'exit'): ")
+        question = input("\nAsk a follow-up question (or type 'exit'): ")
         if question.lower() == "exit":
             break
         answer = observer.ask_follow_up(question)
-        print("🤖 LLaVA says:", answer, flush=True)
+        print("LLaVA says:", answer, flush=True)
 
 input_thread = threading.Thread(target=follow_up_input_loop, args=(observer,))
 input_thread.daemon = True
@@ -185,8 +187,8 @@ try:
         time.sleep(0.01)  # Sleep for 10ms
 
 except KeyboardInterrupt:
-    print("\n⛔ Interrupted by user.")
+    print("\nInterrupted by user.")
 finally:
     streaming_client.unsubscribe()
     cv2.destroyAllWindows()
-    print("👋 Exiting.")
+    print("Exiting.")
