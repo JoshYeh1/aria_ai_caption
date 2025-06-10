@@ -5,18 +5,18 @@ import tempfile
 import os
 import time
 import scipy.io.wavfile as wavfile
-from rapidfuzz import fuzz
+from rapidfuzz import fuzz #allows for wider range of misheard wake words
 import sys
 
 model = whisper.load_model("base")
 
 WAKE_PHRASES = ["hey aria", "hey area", "hey arya"]
-THRESHOLD = 80
+THRESHOLD = 80 #threshold for wake word difference
 
 def is_wake_phrase(text, phrases=WAKE_PHRASES, threshold=THRESHOLD):
     return any(fuzz.partial_ratio(text.lower(), phrase) >= threshold for phrase in phrases)
 
-def record_chunk(duration=2, fs=64000):
+def record_chunk(duration=4, fs=16000): #records for 4 seconds, change duration for longer sample
     print("Listening for wake word...")
     audio = sd.rec(int(duration * fs), samplerate=fs, channels=1, dtype='int16')
     sd.wait()

@@ -17,7 +17,7 @@ def record_audio(duration=5, fs=16000):
 def transcribe(recording, fs):
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         wavfile.write(f.name, fs, recording)
-        print("🔍 Transcribing...")
+        print("Transcribing...")
         result = model.transcribe(f.name)
         os.remove(f.name)
         return result["text"]

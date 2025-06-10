@@ -166,7 +166,7 @@ def follow_up_audio_loop(observer: StreamingObserver):
                 break
 
             answer = observer.ask_follow_up(question)
-            print("🧠 LLaVA says:", answer)
+            print("LLaVA says:", answer)
 
             tts_queue.put(answer)
     except KeyboardInterrupt:
