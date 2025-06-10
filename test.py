@@ -28,7 +28,7 @@ tts_queue = queue.Queue()
 tts_lock  = threading.Lock()
 current_tts_proc = None 
 
-def record_audio(duration=10, fs=16000):
+def record_audio(duration=4, fs=16000):
     print("Listening...")
     recording = sd.rec(int(duration * fs), samplerate=fs,
                     channels=1, dtype="int16")
@@ -44,28 +44,7 @@ def transcribe_audio(recording, fs):
     os.remove(f.name)
     return result["text"].strip()
 
-def tts_worker():
-    global current_tts_proc
-    while True:
-        text = tts_queue.get()
-        if text is None:# shutdown signal
-            break
-        try:
-            observer.tts_in_progress = True
-            # launch `say` non-blocking:
-            cmd = ["say", text]
-            with tts_lock:
-                current_tts_proc = subprocess.Popen(cmd)
-            current_tts_proc.wait()#block until done or killed
-        except Exception as e:
-            print("TTS error:", e)
-        finally:
-            with tts_lock:
-                current_tts_proc = None
-            observer.tts_in_progress = False
-            tts_queue.task_done()
-
-def stop_current_tts():
+def stop_current_tts(): #interrupts speech and empty the queue
     global current_tts_proc
     with tts_lock:
         if current_tts_proc and current_tts_proc.poll() is None:
@@ -83,11 +62,12 @@ class StreamingObserver:
     def __init__(self):
         self.last_image = None
         self.last_caption_time = 0
-        self.cooldown = 5  # seconds between captions
+        self.cooldown = 5  # seconds between captions **CHANGE IF NEEDED**
         self.caption = "Waiting for image..."
         self.caption_in_progress = False
         self.last_caption = ""
-        self.tts_in_progress = False
+        self.tts_in_progress = False #flag for determining tts in progess
+        self.caption_pause = False #flag for pausing caption when answering question
 
     def on_image_received(self, image: np.ndarray, record: ImageDataRecord):
         if record.camera_id == aria.CameraId.Rgb:
@@ -98,6 +78,7 @@ class StreamingObserver:
         now = time.time()
         if (
             self.last_image is not None
+            and not self.caption_pause #ensures that new caption will not run if there is tts for q&a in progress
             and not self.caption_in_progress #ensures caption generation is complete 
             and not self.tts_in_progress #ensures text to speech is complete
             and now - self.last_caption_time >= self.cooldown #waits for cooldown time (might not be needed now tbh)
@@ -125,13 +106,13 @@ class StreamingObserver:
 
     def generate_caption(self, np_img: np.ndarray) -> str:
         try:
-            #convert numpy image to PIL and encode as PNG in-memory
+            #convert numpy image to PIL and encode as PNG in memory
             image = Image.fromarray(np_img).convert("RGB")
             buffer = io.BytesIO()
             image.save(buffer, format="PNG")
             buffer.seek(0)
 
-            #send image to Flask caption server (make sure server is on)
+            #send image to Flask caption server (make sure server is running)
             files = {'image': ('frame.png', buffer, 'image/png')}
             response = requests.post("http://10.100.241.227:8000/caption", files=files)
 
@@ -167,8 +148,6 @@ class StreamingObserver:
         except Exception as e:
             return f"Exception during follow-up: {e}"
         
-
-
 # === CLI Argument Parsing ===
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -199,21 +178,39 @@ if args.interface == "wifi":
 print("Initializing Aria streaming client...")
 aria.set_log_level(aria.Level.Info)
 streaming_client = aria.StreamingClient()
-
 config = streaming_client.subscription_config
 config.subscriber_data_type = aria.StreamingDataType.Rgb
 config.message_queue_size[aria.StreamingDataType.Rgb] = 1
-
 options = aria.StreamingSecurityOptions()
 options.use_ephemeral_certs = True
 config.security_options = options
-
 streaming_client.subscription_config = config
 
 # === Observer & Streaming Start ===
 observer = StreamingObserver()
 
 # === Initialize text to speech queue and worker ===
+def tts_worker():
+    global current_tts_proc
+    while True:
+        text = tts_queue.get()
+        if text is None:# shutdown signal
+            break
+        try:
+            observer.tts_in_progress = True #flag on 
+            # launch `say` non-blocking:
+            cmd = ["say", text]
+            with tts_lock:
+                current_tts_proc = subprocess.Popen(cmd)
+            current_tts_proc.wait()#block until done or killed
+        except Exception as e:
+            print("TTS error:", e)
+        finally:
+            with tts_lock:
+                current_tts_proc = None
+            observer.tts_in_progress = False #flag off 
+            tts_queue.task_done()
+
 tts_thread = threading.Thread(target=tts_worker, daemon=True)
 tts_thread.start()
 
@@ -241,14 +238,30 @@ def follow_up_input_loop(observer: StreamingObserver):
                     continue
 
             elif mode == "s":
-                stop_current_tts()#stops any tts in progress immediately
-                time.sleep(0.1) # Small break so laptop speakers are silent
+                #pause captioning and stop tts
+                observer.caption_pause = True
+                stop_current_tts()
+                time.sleep(0.1) #pause for speakers to stop
 
+                #record & transcribe question
                 audio, rate = record_audio(duration=4)
                 question = transcribe_audio(audio, rate)
                 print(f'You said: "{question}"')
                 if not question:
+                    observer.caption_pause = False
                     continue
+
+                #ask LLaVA & speak the answer immediately
+                answer = observer.ask_follow_up(question)
+                print("\nLLaVA says:", answer, flush=True)
+
+                observer.tts_in_progress = True #block captions while we speak
+                stop_current_tts() #nothing should slip ahead in the queue
+                subprocess.call(["say", answer]) #synchronous, returns when done
+                observer.tts_in_progress = False
+                observer.caption_pause = False #resumes normal caption flow
+                continue
+            
             else:
                 print("Enter t, s, or q.")
                 continue
@@ -275,7 +288,7 @@ try:
     while True:
         if observer.last_image is not None:
             frame = cv2.cvtColor(observer.last_image, cv2.COLOR_RGB2BGR)
-            # Draw caption
+            #display caption in window
             caption_display = observer.caption[:80] + "..." if len(observer.caption) > 80 else observer.caption
             cv2.putText(
                 frame,
@@ -291,7 +304,7 @@ try:
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
         
-        time.sleep(0.01)  # Sleep for 10ms
+        time.sleep(0.01)#sleep for 10ms
 
 except KeyboardInterrupt:
     print("\nInterrupted by user.")
