@@ -1,25 +1,82 @@
 #test file for Josh to try random stuff 
 
-import cv2
+import cv2, argparse, time, io, threading, requests, queue, os, sys
 import numpy as np
-import time
 from PIL import Image
 from ollama import Client
 import aria.sdk as aria
 from projectaria_tools.core.sensor_data import ImageDataRecord
-import argparse
-import io
-import threading
-import requests
-import queue
-import os
-import sys
-from wake_word import wait_for_wake_word
+
+#speech to text imports
+import whisper
+import sounddevice as sd
+import tempfile, subprocess
+import scipy.io.wavfile as wavfile
 
 # === Initialize Ollama client ===
 print("Connecting to Ollama...")
 client = Client()
 print("LLaVA (Ollama) client initialized.")
+
+# === Initialize Whisper ===
+print("Loading Whisper model...")
+stt_model = whisper.load_model("base") # also can pick "tiny", "base", "small", and "medium"
+print("Whisper loaded.")
+
+#Variables for tts interruption
+tts_queue = queue.Queue()
+tts_lock  = threading.Lock()
+current_tts_proc = None 
+
+def record_audio(duration=10, fs=16000):
+    print("Listening...")
+    recording = sd.rec(int(duration * fs), samplerate=fs,
+                    channels=1, dtype="int16")
+    sd.wait()
+    print("Recording finished.")
+    return recording, fs
+
+def transcribe_audio(recording, fs):
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        wavfile.write(f.name, fs, recording)
+        print("Transcribing...")
+        result = stt_model.transcribe(f.name, fp16=False)
+    os.remove(f.name)
+    return result["text"].strip()
+
+def tts_worker():
+    global current_tts_proc
+    while True:
+        text = tts_queue.get()
+        if text is None:# shutdown signal
+            break
+        try:
+            observer.tts_in_progress = True
+            # launch `say` non-blocking:
+            cmd = ["say", text]
+            with tts_lock:
+                current_tts_proc = subprocess.Popen(cmd)
+            current_tts_proc.wait()#block until done or killed
+        except Exception as e:
+            print("TTS error:", e)
+        finally:
+            with tts_lock:
+                current_tts_proc = None
+            observer.tts_in_progress = False
+            tts_queue.task_done()
+
+def stop_current_tts():
+    global current_tts_proc
+    with tts_lock:
+        if current_tts_proc and current_tts_proc.poll() is None:
+            current_tts_proc.terminate()   #or .kill() for immediate stop
+        current_tts_proc = None
+        #flush anything that was still in line
+        while not tts_queue.empty():
+            try:
+                tts_queue.get_nowait()
+            except queue.Empty:
+                break
 
 # === Streaming Observer Class ===
 class StreamingObserver:
@@ -109,6 +166,7 @@ class StreamingObserver:
                 return f"Server error: {response.status_code} - {response.text}"
         except Exception as e:
             return f"Exception during follow-up: {e}"
+        
 
 
 # === CLI Argument Parsing ===
@@ -156,23 +214,6 @@ streaming_client.subscription_config = config
 observer = StreamingObserver()
 
 # === Initialize text to speech queue and worker ===
-tts_queue = queue.Queue()
-
-def tts_worker():
-    while True:
-        text = tts_queue.get()
-        if text is None:
-            break
-        try:
-            observer.tts_in_progress = True #flag start
-            os.system(f'say "{text}"')  # macOS built-in TTS
-        except Exception as e:
-            print("TTS Error:", e)
-        finally:
-            observer.tts_in_progress = False #flag end
-            tts_queue.task_done()
-
-
 tts_thread = threading.Thread(target=tts_worker, daemon=True)
 tts_thread.start()
 
@@ -188,18 +229,42 @@ cv2.resizeWindow("Aria RGB + LLaVA Caption", 640, 480)
 def follow_up_input_loop(observer: StreamingObserver):
     try:
         while True:
-            question = input("\n Ask a follow-up question: ")
-            if question.lower() == "exit":
-                print("Exiting follow-up input thread.")
+            # ------- choose input mode -------
+            mode = input("\n[t]ype or [s]peak a follow-up (exit = q): ").strip().lower()
+            if mode == "q":
+                print("Exiting follow-up loop.")
                 sys.exit(0)
-            
+
+            if mode == "t":
+                question = input("Your question: ").strip()
+                if not question:
+                    continue
+
+            elif mode == "s":
+                stop_current_tts()#stops any tts in progress immediately
+                time.sleep(0.1) # Small break so laptop speakers are silent
+
+                audio, rate = record_audio(duration=4)
+                question = transcribe_audio(audio, rate)
+                print(f'You said: "{question}"')
+                if not question:
+                    continue
+            else:
+                print("Enter t, s, or q.")
+                continue
+            # ------- send to LLaVA -------
             answer = observer.ask_follow_up(question)
-            print("\n LLaVA says:", answer, flush=True)
+            print("\nLLaVA says:", answer, flush=True)
+
+            # enqueue answer for speech after any caption
             while observer.caption_in_progress:
                 time.sleep(0.05)
-            tts_queue.put(answer) #adds answer to queue if there
+            tts_queue.put(answer)
+
     except (KeyboardInterrupt, EOFError):
-        print("\n Stopping follow-up loop.")
+        print("\nStopping follow-up loop.")
+        stop_current_tts()
+        tts_queue.put(None)
         sys.exit(0)
 
 input_thread = threading.Thread(target=follow_up_input_loop, args=(observer,))
@@ -232,6 +297,7 @@ except KeyboardInterrupt:
     print("\nInterrupted by user.")
 finally:
     streaming_client.unsubscribe()
+    stop_current_tts()   # Stops current tts
     tts_queue.put(None)  # Signal TTS thread to exit
     tts_thread.join()    # Wait for TTS thread to finish
     cv2.destroyAllWindows()
