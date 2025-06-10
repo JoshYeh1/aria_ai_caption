@@ -1,3 +1,5 @@
+# Combination of all test code to run through server. Integrates llava captioning
+# for aria glasses, text to speech, q&a, and wake word (in progress)
 import cv2
 import numpy as np
 import time
