@@ -283,7 +283,7 @@ def follow_up_input_loop(observer: StreamingObserver):
                 continue
             # ------- send to LLaVA -------
             answer = observer.ask_follow_up(question)
-            print("\nLLaVA says:", answer, flush=True)
+            #print("\nLLaVA says:", answer, flush=True)
 
             # enqueue answer for speech after any caption
             while observer.caption_in_progress:
@@ -322,12 +322,12 @@ def follow_up_on_wake(observer: StreamingObserver):
 
         if question:
             answer = observer.ask_follow_up(question)
-            print("\nLLaVA says:", answer)
+            #print("\nLLaVA says:", answer)
             log_event(f"Answer: {answer}")
             subprocess.call(["say", answer])
 
         observer.caption_pause = False
-        time.sleep(1.0)  # prevent retriggering
+        time.sleep(0.5)  # prevent retriggering
 
 wake_thread = threading.Thread(target=follow_up_on_wake, args=(observer,), daemon=True)
 wake_thread.start()

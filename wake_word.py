@@ -42,7 +42,7 @@ def wait_for_wake_word(model):
 
             if is_wake_phrase(text):
                 print("Wake phrase detected!")
-                os.system('say "Yes?"')
+                os.system('say "How can I help?"')
                 break
 
             time.sleep(0.01)
