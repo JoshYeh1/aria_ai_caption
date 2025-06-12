@@ -1,5 +1,6 @@
 # This runs GPU server connection 
 # Make sure this is running before running programs needing server requests.
+# IMPORTANT: Change your server address 
 from flask import Flask, request, jsonify
 from PIL import Image
 import io

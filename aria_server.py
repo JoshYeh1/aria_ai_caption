@@ -2,6 +2,7 @@
 # Similar to aria_server_caption.py with some differences. 
 # No longer captions image unless prompeted (Still process images tho)
 # Wake word & Key press only way to make requests 
+# IMPORTANT: Change your server address 
 
 import cv2, argparse, time, io, threading, requests, queue, os, sys, warnings
 import numpy as np
@@ -70,7 +71,7 @@ def stop_current_tts(): #interrupts speech and empty the queue
 def log_event(message, logfile="wake_log.txt"):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}]  {message}")
-    #Uncomment following if you want datalog txt
+    #Uncomment following if you want datalog.txt
     #with open(logfile, "a") as f:
     #    f.write(f"[{timestamp}] {message}\n")
 
@@ -313,19 +314,23 @@ def follow_up_on_wake(observer: StreamingObserver):
 
         #Captions image 
         if question.lower() in ["caption", "describe", "what's around me"]:
+            caption_time = time.time()
             caption = observer.generate_caption(observer.last_image)
-            print(f"\nLLaVA caption: {caption}")
+            #print(f"\nLLaVA caption: {caption}")
             log_event(f"Caption: {caption}")
+            print(f"Cpation Time: {time.time()-caption_time}")
             subprocess.call(["say", caption])
             observer.caption_pause = False
+            
             continue
 
         if question:
+            question_time = time.time()
             answer = observer.ask_follow_up(question)
-            #print("\nLLaVA says:", answer)
             log_event(f"Answer: {answer}")
+            print(f"Question Time: {time.time()-question_time}")
             subprocess.call(["say", answer])
-
+            
         observer.caption_pause = False
         time.sleep(0.5)  # prevent retriggering
 
