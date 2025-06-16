@@ -36,8 +36,6 @@ print("Whisper loaded.")
 
 #Variables for tts interruption
 tts_queue = queue.Queue()
-tts_lock  = threading.Lock()
-current_tts_proc = None 
 
 def record_audio(duration=4, fs=16000):
     print("Listening...")
@@ -56,17 +54,11 @@ def transcribe_audio(recording, fs):
     return result["text"].strip()
 
 def stop_current_tts(): #interrupts speech and empty the queue
-    global current_tts_proc
-    with tts_lock:
-        if current_tts_proc and current_tts_proc.poll() is None:
-            current_tts_proc.terminate()   #or .kill() for immediate stop
-        current_tts_proc = None
-        #flush anything that was still in line
-        while not tts_queue.empty():
-            try:
-                tts_queue.get_nowait()
-            except queue.Empty:
-                break
+    while not tts_queue.empty():
+        try:
+            tts_queue.get_nowait()
+        except queue.Empty:
+            break
 
 def log_event(message, logfile="wake_log.txt"):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -74,6 +66,13 @@ def log_event(message, logfile="wake_log.txt"):
     #Uncomment following if you want datalog.txt
     #with open(logfile, "a") as f:
     #    f.write(f"[{timestamp}] {message}\n")
+
+def speak_text(text, output_device=None):
+    try:
+        subprocess.run(["say", "-o", "temp.aiff", text])
+        subprocess.run(["afplay", "temp.aiff"])
+    except Exception as e:
+        print(f"Error during TTS playback: {e}")
 
 # === Streaming Observer Class ===
 class StreamingObserver:
@@ -154,7 +153,7 @@ class StreamingObserver:
         except Exception as e:
             return f"Exception during follow-up: {e}"
         
-# === CLI Argument Parsing ===
+# === Argument Parsing ===
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--interface",
@@ -163,7 +162,14 @@ parser.add_argument(
     choices=["usb", "wifi"],
     help="Connection type: usb or wifi",
 )
+parser.add_argument(
+    "--output",
+    type=str,
+    default="MacBook Pro Speakers",
+    help="Specify output device name: 'Bose AE2 Soundlink' or 'MacBook Pro Speakers'"
+)
 args = parser.parse_args()
+current_audio_output_device = args.output
 
 # === Optional WiFi Device Setup ===
 if args.interface == "wifi":
@@ -204,16 +210,10 @@ def tts_worker():
             break
         try:
             observer.tts_in_progress = True #flag on 
-            # launch `say` non-blocking:
-            cmd = ["say", text]
-            with tts_lock:
-                current_tts_proc = subprocess.Popen(cmd)
-            current_tts_proc.wait()#block until done or killed
+            speak_text(text, output_device=current_audio_output_device)
         except Exception as e:
             print("TTS error:", e)
         finally:
-            with tts_lock:
-                current_tts_proc = None
             observer.tts_in_progress = False #flag off 
             tts_queue.task_done()
 
@@ -264,7 +264,7 @@ def follow_up_input_loop(observer: StreamingObserver):
                     caption = observer.generate_caption(observer.last_image)
                     print(f"\nLLaVA caption: {caption}")
                     log_event(f"Caption: {caption}")
-                    subprocess.call(["say", caption])
+                    speak_text(caption, current_audio_output_device)
                     observer.caption_pause = False
                     continue
 
@@ -274,7 +274,7 @@ def follow_up_input_loop(observer: StreamingObserver):
 
                 observer.tts_in_progress = True #block captions while we speak
                 stop_current_tts() #nothing should slip ahead in the queue
-                subprocess.call(["say", answer]) #synchronous, returns when done
+                speak_text(answer, current_audio_output_device) #synchronous, returns when done
                 observer.tts_in_progress = False
                 observer.caption_pause = False #resumes normal caption flow
                 continue
@@ -319,7 +319,7 @@ def follow_up_on_wake(observer: StreamingObserver):
             #print(f"\nLLaVA caption: {caption}")
             log_event(f"Caption: {caption}")
             print(f"Cpation Time: {time.time()-caption_time}")
-            subprocess.call(["say", caption])
+            speak_text(caption, current_audio_output_device)
             observer.caption_pause = False
             
             continue
@@ -329,7 +329,7 @@ def follow_up_on_wake(observer: StreamingObserver):
             answer = observer.ask_follow_up(question)
             log_event(f"Answer: {answer}")
             print(f"Question Time: {time.time()-question_time}")
-            subprocess.call(["say", answer])
+            speak_text(answer, current_audio_output_device)
             
         observer.caption_pause = False
         time.sleep(0.5)  # prevent retriggering
