@@ -1,8 +1,11 @@
 # Combination of all test code to run through server. 
 # Similar to aria_server_caption.py with some differences. 
 # No longer captions image unless prompeted (Still process images tho)
-# Wake word & Key press only way to make requests 
-# IMPORTANT: Change your server address 
+# Wake word only way to make requests 
+# "Describe" "Caption" "What's arround me" will prompt captioning
+# Now can output to bluetooth device using --output cmd line argument
+# IMPORTANT: Change your server address if running 
+# Run Example: python aria_server.py --interface usb --output "Josh's AirPod Pro's"
 
 import cv2, argparse, time, io, threading, requests, queue, os, sys, warnings
 import numpy as np
